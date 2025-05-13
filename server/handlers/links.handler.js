@@ -12,6 +12,7 @@ const query = require("../queries");
 const queue = require("../queues");
 const utils = require("../utils");
 const env = require("../env");
+const { tags } = require("../../docs/api/api");
 
 const CustomError = utils.CustomError;
 const dnsLookup = promisify(dns.lookup);
@@ -463,6 +464,7 @@ async function redirect(req, res, next) {
 
   if (isPreservedUrl) return next();
 
+
   // 1. If custom domain, get domain info
   const host = utils.removeWww(req.headers.host);
   const domain =
@@ -488,18 +490,21 @@ async function redirect(req, res, next) {
     return res.redirect("/banned");
   }
 
+  const target = link.target+"?"+new URLSearchParams(req.query).toString();
+
+
   // 5. If wants to see link info, then redirect
   const isRequestingInfo = /.*\+$/gi.test(req.params.id);
   if (isRequestingInfo && !link.password) {
     if (req.isHTML) {
       res.render("url_info", { 
         title: "Short link information",
-        target: link.target,
+        target: target,
         link: utils.getShortURL(link.address, link.domain).link
       });
       return;
     }
-    return res.send({ target: link.target });
+    return res.send({ target: target });
   }
 
   // 6. If link is protected, redirect to password page
@@ -516,7 +521,7 @@ async function redirect(req, res, next) {
           if (colon !== -1) {
             const password = decoded.slice(colon + 1);
             const matches = await bcrypt.compare(password, link.password);
-            if (matches) return res.redirect(link.target);
+            if (matches) return res.redirect(target);
           }
         }
       }
@@ -541,7 +546,7 @@ async function redirect(req, res, next) {
   }
 
   // 8. Redirect to target
-  return res.redirect(link.target);
+  return res.redirect(target);
 };
 
 async function redirectProtected(req, res) {
@@ -581,7 +586,8 @@ async function redirectProtected(req, res) {
     });
     return;
   }
-  return res.status(200).send({ target: link.target });
+  const target = link.target+"?"+new URLSearchParams(req.query).toString();
+  return res.status(200).send({ target: target });
 };
 
 async function redirectCustomDomainHomepage(req, res, next) {
