@@ -23,12 +23,12 @@ async function get(req, res) {
   const userId = req.user.id;
 
   const match = {
-    user_id: userId
+    user_id: userId,
   };
 
   const [data, total] = await Promise.all([
     query.link.get(match, { limit, search, skip }),
-    query.link.total(match, { search })
+    query.link.total(match, { search }),
   ]);
 
   if (req.isHTML) {
@@ -37,7 +37,7 @@ async function get(req, res) {
       limit,
       skip,
       links: data.map(utils.sanitize.link_html),
-    })
+    });
     return;
   }
 
@@ -47,7 +47,7 @@ async function get(req, res) {
     skip,
     data: data.map(utils.sanitize.link),
   });
-};
+}
 
 async function getAdmin(req, res) {
   const { limit, skip } = req.context;
@@ -57,23 +57,27 @@ async function getAdmin(req, res) {
   const banned = utils.parseBooleanQuery(req.query.banned);
   const anonymous = utils.parseBooleanQuery(req.query.anonymous);
   const has_domain = utils.parseBooleanQuery(req.query.has_domain);
-  
+
   const match = {
     ...(banned !== undefined && { banned }),
-    ...(anonymous !== undefined && { user_id: [anonymous ? "is" : "is not", null] }),
-    ...(has_domain !== undefined && { domain_id: [has_domain ? "is not" : "is", null] }),
+    ...(anonymous !== undefined && {
+      user_id: [anonymous ? "is" : "is not", null],
+    }),
+    ...(has_domain !== undefined && {
+      domain_id: [has_domain ? "is not" : "is", null],
+    }),
   };
-  
+
   // if domain is equal to the defualt domain,
   // it means admins is looking for links with the defualt domain (no custom user domain)
   if (domain === env.DEFAULT_DOMAIN) {
     domain = undefined;
     match.domain_id = null;
   }
-  
+
   const [data, total] = await Promise.all([
     query.link.getAdmin(match, { limit, search, user, domain, skip }),
-    query.link.totalAdmin(match, { search, user, domain })
+    query.link.totalAdmin(match, { search, user, domain }),
   ]);
 
   const links = data.map(utils.sanitize.link_admin);
@@ -85,7 +89,7 @@ async function getAdmin(req, res) {
       limit,
       skip,
       links,
-    })
+    });
     return;
   }
 
@@ -95,37 +99,45 @@ async function getAdmin(req, res) {
     skip,
     data: links,
   });
-};
+}
 
 async function create(req, res) {
-  const { reuse, password, customurl, description, target, fetched_domain, expire_in } = req.body;
+  const {
+    reuse,
+    password,
+    customurl,
+    description,
+    target,
+    fetched_domain,
+    expire_in,
+  } = req.body;
   const domain_id = fetched_domain ? fetched_domain.id : null;
-  
+
   const targetDomain = utils.removeWww(URL.parse(target).hostname);
-  
+
   const tasks = await Promise.all([
     reuse &&
       query.link.find({
         target,
         user_id: req.user.id,
-        domain_id
+        domain_id,
       }),
     customurl &&
       query.link.find({
         address: customurl,
-        domain_id
+        domain_id,
       }),
     !customurl && utils.generateId(query, domain_id),
     validators.bannedDomain(targetDomain),
-    validators.bannedHost(targetDomain)
+    validators.bannedHost(targetDomain),
   ]);
-  
+
   // if "reuse" is true, try to return
   // the existent URL without creating one
   if (tasks[0]) {
     return res.json(utils.sanitize.link(tasks[0]));
   }
-  
+
   // Check if custom link already exists
   if (tasks[1]) {
     const error = "Custom URL is already in use.";
@@ -142,29 +154,27 @@ async function create(req, res) {
     description,
     target,
     expire_in,
-    user_id: req.user && req.user.id
+    user_id: req.user && req.user.id,
   });
 
   link.domain = fetched_domain?.address;
-  
+
   if (req.isHTML) {
     res.setHeader("HX-Trigger", "reloadMainTable");
     const shortURL = utils.getShortURL(link.address, link.domain);
     return res.render("partials/shortener", {
-      link: shortURL.link, 
+      link: shortURL.link,
       url: shortURL.url,
     });
   }
-  
-  return res
-    .status(201)
-    .send(utils.sanitize.link({ ...link }));
+
+  return res.status(201).send(utils.sanitize.link({ ...link }));
 }
 
 async function edit(req, res) {
   const link = await query.link.find({
     uuid: req.params.id,
-    ...(!req.user.admin && { user_id: req.user.id })
+    ...(!req.user.admin && { user_id: req.user.id }),
   });
 
   if (!link) {
@@ -173,15 +183,14 @@ async function edit(req, res) {
 
   let isChanged = false;
   [
-    [req.body.address, "address"], 
-    [req.body.target, "target"], 
-    [req.body.description, "description"], 
-    [req.body.expire_in, "expire_in"], 
-    [req.body.password, "password"]
+    [req.body.address, "address"],
+    [req.body.target, "target"],
+    [req.body.description, "description"],
+    [req.body.expire_in, "expire_in"],
+    [req.body.password, "password"],
   ].forEach(([value, name]) => {
     if (!value) {
-      if (name === "password" && link.password) 
-        req.body.password = null;
+      if (name === "password" && link.password) req.body.password = null;
       else {
         delete req.body[name];
         return;
@@ -192,10 +201,17 @@ async function edit(req, res) {
       return;
     }
     if (name === "expire_in" && link.expire_in)
-      if (Math.abs(differenceInSeconds(utils.parseDatetime(value), utils.parseDatetime(link.expire_in))) < 60)
-          return;
+      if (
+        Math.abs(
+          differenceInSeconds(
+            utils.parseDatetime(value),
+            utils.parseDatetime(link.expire_in)
+          )
+        ) < 60
+      )
+        return;
     if (name === "password")
-      if (value && value.replace(/•/ig, "").length === 0) {
+      if (value && value.replace(/•/gi, "").length === 0) {
         delete req.body.password;
         return;
       }
@@ -207,7 +223,7 @@ async function edit(req, res) {
   }
 
   const { address, target, description, expire_in, password } = req.body;
-  
+
   const targetDomain = target && utils.removeWww(URL.parse(target).hostname);
   const domain_id = link.domain_id || null;
 
@@ -215,10 +231,10 @@ async function edit(req, res) {
     address &&
       query.link.find({
         address,
-        domain_id
+        domain_id,
       }),
     target && validators.bannedDomain(targetDomain),
-    target && validators.bannedHost(targetDomain)
+    target && validators.bannedHost(targetDomain),
   ]);
 
   // Check if custom link already exists
@@ -231,14 +247,14 @@ async function edit(req, res) {
   // Update link
   const [updatedLink] = await query.link.update(
     {
-      id: link.id
+      id: link.id,
     },
     {
       ...(address && { address }),
       ...(description && { description }),
       ...(target && { target }),
       ...(expire_in && { expire_in }),
-      ...((password || password === null) && { password })
+      ...((password || password === null) && { password }),
     }
   );
 
@@ -252,12 +268,12 @@ async function edit(req, res) {
   }
 
   return res.status(200).send(utils.sanitize.link({ ...updatedLink }));
-};
+}
 
 async function editAdmin(req, res) {
   const link = await query.link.find({
     uuid: req.params.id,
-    ...(!req.user.admin && { user_id: req.user.id })
+    ...(!req.user.admin && { user_id: req.user.id }),
   });
 
   if (!link) {
@@ -266,15 +282,14 @@ async function editAdmin(req, res) {
 
   let isChanged = false;
   [
-    [req.body.address, "address"], 
-    [req.body.target, "target"], 
-    [req.body.description, "description"], 
-    [req.body.expire_in, "expire_in"], 
-    [req.body.password, "password"]
+    [req.body.address, "address"],
+    [req.body.target, "target"],
+    [req.body.description, "description"],
+    [req.body.expire_in, "expire_in"],
+    [req.body.password, "password"],
   ].forEach(([value, name]) => {
     if (!value) {
-      if (name === "password" && link.password) 
-        req.body.password = null;
+      if (name === "password" && link.password) req.body.password = null;
       else {
         delete req.body[name];
         return;
@@ -285,10 +300,17 @@ async function editAdmin(req, res) {
       return;
     }
     if (name === "expire_in" && link.expire_in)
-      if (Math.abs(differenceInSeconds(utils.parseDatetime(value), utils.parseDatetime(link.expire_in))) < 60)
-          return;
+      if (
+        Math.abs(
+          differenceInSeconds(
+            utils.parseDatetime(value),
+            utils.parseDatetime(link.expire_in)
+          )
+        ) < 60
+      )
+        return;
     if (name === "password")
-      if (value && value.replace(/•/ig, "").length === 0) {
+      if (value && value.replace(/•/gi, "").length === 0) {
         delete req.body.password;
         return;
       }
@@ -300,7 +322,7 @@ async function editAdmin(req, res) {
   }
 
   const { address, target, description, expire_in, password } = req.body;
-  
+
   const targetDomain = target && utils.removeWww(URL.parse(target).hostname);
   const domain_id = link.domain_id || null;
 
@@ -308,10 +330,10 @@ async function editAdmin(req, res) {
     address &&
       query.link.find({
         address,
-        domain_id
+        domain_id,
       }),
     target && validators.bannedDomain(targetDomain),
-    target && validators.bannedHost(targetDomain)
+    target && validators.bannedHost(targetDomain),
   ]);
 
   // Check if custom link already exists
@@ -324,14 +346,14 @@ async function editAdmin(req, res) {
   // Update link
   const [updatedLink] = await query.link.update(
     {
-      id: link.id
+      id: link.id,
     },
     {
       ...(address && { address }),
       ...(description && { description }),
       ...(target && { target }),
       ...(expire_in && { expire_in }),
-      ...((password || password === null) && { password })
+      ...((password || password === null) && { password }),
     }
   );
 
@@ -345,12 +367,12 @@ async function editAdmin(req, res) {
   }
 
   return res.status(200).send(utils.sanitize.link({ ...updatedLink }));
-};
+}
 
 async function remove(req, res) {
   const { error, isRemoved, link } = await query.link.remove({
     uuid: req.params.id,
-    ...(!req.user.admin && { user_id: req.user.id })
+    ...(!req.user.admin && { user_id: req.user.id }),
   });
 
   if (!isRemoved) {
@@ -370,7 +392,7 @@ async function remove(req, res) {
   return res
     .status(200)
     .send({ message: "Link has been deleted successfully." });
-};
+}
 
 async function report(req, res) {
   const { link } = req.body;
@@ -379,22 +401,22 @@ async function report(req, res) {
 
   if (req.isHTML) {
     res.render("partials/report/form", {
-      message: "Report was received. We'll take actions shortly."
+      message: "Report was received. We'll take actions shortly.",
     });
     return;
   }
-  
+
   return res
     .status(200)
     .send({ message: "Thanks for the report, we'll take actions shortly." });
-};
+}
 
 async function ban(req, res) {
   const { id } = req.params;
 
   const update = {
     banned_by_id: req.user.id,
-    banned: true
+    banned: true,
   };
 
   // 1. check if link exists
@@ -455,15 +477,14 @@ async function ban(req, res) {
   }
 
   return res.status(200).send({ message: "Banned link successfully." });
-};
+}
 
 async function redirect(req, res, next) {
   const isPreservedUrl = utils.preservedURLs.some(
-    item => item === req.path.replace("/", "")
+    (item) => item === req.path.replace("/", "")
   );
 
   if (isPreservedUrl) return next();
-
 
   // 1. If custom domain, get domain info
   const host = utils.removeWww(req.headers.host);
@@ -476,7 +497,7 @@ async function redirect(req, res, next) {
   const address = req.params.id.replace("+", "");
   const link = await query.link.find({
     address,
-    domain_id: domain ? domain.id : null
+    domain_id: domain ? domain.id : null,
   });
 
   // 3. When no link, if has domain redirect to domain's homepage
@@ -490,17 +511,28 @@ async function redirect(req, res, next) {
     return res.redirect("/banned");
   }
 
-  const target = link.target+"?"+new URLSearchParams(req.query).toString();
+  const newSearchParams = new URLSearchParams(req.query).toString();
+  const currentSearchParams = URL.parse(link.target).search;
+  let searchParams = "";
+  if (newSearchParams) {
+    if (currentSearchParams) {
+      searchParams = "&" + newSearchParams;
+    } else {
+      searchParams = "?" + newSearchParams;
+    }
+  }
 
+
+  const target = link.target + searchParams;
 
   // 5. If wants to see link info, then redirect
   const isRequestingInfo = /.*\+$/gi.test(req.params.id);
   if (isRequestingInfo && !link.password) {
     if (req.isHTML) {
-      res.render("url_info", { 
+      res.render("url_info", {
         title: "Short link information",
         target: target,
-        link: utils.getShortURL(link.address, link.domain).link
+        link: utils.getShortURL(link.address, link.domain).link,
       });
       return;
     }
@@ -528,7 +560,7 @@ async function redirect(req, res, next) {
     }
     res.render("protected", {
       title: "Protected short link",
-      id: link.uuid
+      id: link.uuid,
     });
     return;
   }
@@ -541,13 +573,13 @@ async function redirect(req, res, next) {
       ip: req.ip,
       country: req.get("cf-ipcountry"),
       referrer: req.get("Referrer"),
-      link
+      link,
     });
   }
 
   // 8. Redirect to target
   return res.redirect(target);
-};
+}
 
 async function redirectProtected(req, res) {
   // 1. Get link
@@ -573,7 +605,7 @@ async function redirectProtected(req, res) {
       ip: req.ip,
       country: req.get("cf-ipcountry"),
       referrer: req.get("Referrer"),
-      link
+      link,
     });
   }
 
@@ -586,9 +618,9 @@ async function redirectProtected(req, res) {
     });
     return;
   }
-  const target = link.target+"?"+new URLSearchParams(req.query).toString();
+  const target = link.target + "?" + new URLSearchParams(req.query).toString();
   return res.status(200).send({ target: target });
-};
+}
 
 async function redirectCustomDomainHomepage(req, res, next) {
   const host = utils.removeWww(req.headers.host);
@@ -599,10 +631,7 @@ async function redirectCustomDomainHomepage(req, res, next) {
 
   const path = req.path;
   const pathName = path.replace("/", "").split("/")[0];
-  if (
-    path === "/" ||
-    utils.preservedURLs.includes(pathName)
-  ) {
+  if (path === "/" || utils.preservedURLs.includes(pathName)) {
     const domain = await query.domain.find({ address: host });
     if (domain?.homepage) {
       res.redirect(302, domain.homepage);
@@ -611,7 +640,7 @@ async function redirectCustomDomainHomepage(req, res, next) {
   }
 
   next();
-};
+}
 
 async function stats(req, res) {
   const { user } = req;
@@ -619,7 +648,7 @@ async function stats(req, res) {
 
   const link = await query.link.find({
     ...(!user.admin && { user_id: user.id }),
-    uuid
+    uuid,
   });
 
   if (!link) {
@@ -634,7 +663,9 @@ async function stats(req, res) {
   const stats = await query.visit.find({ link_id: link.id }, link.visit_count);
 
   if (!stats) {
-    throw new CustomError("Could not get the short link stats. Try again later.");
+    throw new CustomError(
+      "Could not get the short link stats. Try again later."
+    );
   }
 
   if (req.isHTML) {
@@ -648,9 +679,9 @@ async function stats(req, res) {
 
   return res.status(200).send({
     ...stats,
-    ...utils.sanitize.link(link)
+    ...utils.sanitize.link(link),
   });
-};
+}
 
 module.exports = {
   ban,
@@ -665,4 +696,4 @@ module.exports = {
   redirect,
   redirectProtected,
   redirectCustomDomainHomepage,
-}
+};
